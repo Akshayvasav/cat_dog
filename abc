@@ -1,2 +1,444 @@
 hi team how are you
 i am fine
+import os
+import yaml
+import pandas as pd
+
+training_result_path = r""
+
+eval_dataset = 'train' # train / val
+logfile = os.path.join(training_result_path,"train_tp_fp_fn_log.txt")
+yamlfile = r""
+epoch_interval = 10
+best_epoch = 259
+os.makedirs(os.path.join(training_result_path,'metrics'), exist_ok = True)
+
+with open(yamlfile, errors='ignore') as fyamlfile:
+        opt = yaml.safe_load(fyamlfile)
+        
+nc = len(opt['names']) # number of classes
+names = []
+for i  in range(nc):
+    names.append(opt['names'][i])
+    
+print(names)
+
+
+with open(logfile, 'r') as flogfile:
+    logfilelines = flogfile.readlines()
+
+def getMetrics(tp, fp, fn):
+    metrics_data = []
+    for class_iterator in range(nc):
+        class_name = names[class_iterator]
+        class_tp, class_fp, class_fn = tp[class_iterator], fp[class_iterator], fn[class_iterator]
+        # print(class_tp, class_fp, class_fn)
+        try:    
+            class_gt = class_tp + class_fn
+            r = class_tp / (class_tp + class_fn)
+            p = class_tp / (class_tp + class_fp)
+            acc = class_tp / class_gt * 100
+            f1 = (2 * p * r) / (p + r)
+            mAP = (class_tp * class_tp) / ((class_tp + class_fn) * (class_tp + class_fp))
+            metrics_data.append([class_name, class_tp, class_fp, class_fn, acc, p, r, f1, mAP])
+        except:
+            # Divide by zero in case of 0 tp / fp / fn
+            metrics_data.append([class_name, class_tp, class_fp, class_fn, 0, 0, 0, 0, 0])
+    # print(metrics_data)
+    return metrics_data
+
+
+# In[10]:
+
+
+def parseConfusionMatrix(raw_confusion_matrix):
+    parsed_confusion_matrix = []
+    conf_names = names + ['background']
+    for i in range(len(raw_confusion_matrix)):
+        row = raw_confusion_matrix[i].replace('\n', '').replace(']', '').split()[1:]
+        row = [conf_names[i]] + [int(float(x)) for x in row]
+        parsed_confusion_matrix.append(row)
+    return parsed_confusion_matrix
+
+
+# In[11]:
+
+
+full_epoch_list= []
+all_epochs_metrics_training = []
+print('Starting Evaluation Metrics\n')
+for i in range(len(logfilelines)):
+    line = logfilelines[i].replace('\n', '')
+    if 'Epoch' in line:    
+        linesplit = line.split()
+        epoch = int(linesplit[1])
+        if (epoch % epoch_interval == 0) or (epoch % best_epoch == 0):
+            full_epoch_list.append(epoch)
+            print(f'Processing epoch {epoch}')
+            tp = logfilelines[i+1].replace('\n', '').replace(']', '').split()[2:]
+            tp = [int(float(x)) for x in tp]
+            fp = logfilelines[i+2].replace('\n', '').replace(']', '').split()[2:]
+            fp = [int(float(x)) for x in fp]
+            fn = logfilelines[i+3].replace('\n', '').replace(']', '').split()[2:]
+            fn = [int(float(x)) for x in fn]
+            # print(tp, fp, fn)
+            raw_confusion_matrix = logfilelines[i+5:i+5+nc+1]
+            parsed_confusion_matrix = parseConfusionMatrix(raw_confusion_matrix)
+            metrics_data = getMetrics(tp, fp, fn)
+            
+            writer = pd.ExcelWriter(f'{training_result_path}/metrics/{eval_dataset}_{epoch}.xlsx', engine = 'xlsxwriter')
+            calculated_metrics = pd.DataFrame.from_records(metrics_data, columns = ['class', 'TP', 'FP', 'FN', 'Accuracy', 'Precision', 'Recall', 'F1', 'mAP'])
+            calculated_metrics.to_excel(writer, sheet_name = 'metrics', index = False)
+            all_epochs_metrics_training.append(calculated_metrics)
+            calcuated_confusion_matrix = pd.DataFrame.from_records(parsed_confusion_matrix, columns = [' ', *names, 'background'])
+            calcuated_confusion_matrix.to_excel(writer, sheet_name = 'confusion_matrix', index = False)
+            writer.save()
+            
+            print(f'Processing epoch {epoch} completed\n')
+            
+print('Evaluation Metrics completed\n')
+
+
+# ### Validation Dataset
+
+# In[12]:
+
+
+eval_dataset = 'val' # train / val
+logfile = os.path.join(training_result_path,"val_tp_fp_fn_log.txt")
+
+
+# In[13]:
+
+
+with open(logfile, 'r') as flogfile:
+    logfilelines = flogfile.readlines()
+
+
+# In[14]:
+
+
+full_epoch_list= []
+all_epochs_metrics_validation = []
+print('Starting Evaluation Metrics\n')
+for i in range(len(logfilelines)):
+    line = logfilelines[i].replace('\n', '')
+    if 'Epoch' in line:    
+        linesplit = line.split()
+        epoch = int(linesplit[1])
+        if (epoch % epoch_interval == 0) or (epoch % best_epoch == 0):
+            full_epoch_list.append(epoch)
+            print(f'Processing epoch {epoch}')
+            tp = logfilelines[i+1].replace('\n', '').replace(']', '').split()[2:]
+            tp = [int(float(x)) for x in tp]
+            fp = logfilelines[i+2].replace('\n', '').replace(']', '').split()[2:]
+            fp = [int(float(x)) for x in fp]
+            fn = logfilelines[i+3].replace('\n', '').replace(']', '').split()[2:]
+            fn = [int(float(x)) for x in fn]
+            # print(tp, fp, fn)
+            raw_confusion_matrix = logfilelines[i+5:i+5+nc+1]
+            parsed_confusion_matrix = parseConfusionMatrix(raw_confusion_matrix)
+            metrics_data = getMetrics(tp, fp, fn)
+            
+            writer = pd.ExcelWriter(f'{training_result_path}/metrics/{eval_dataset}_{epoch}.xlsx', engine = 'xlsxwriter')
+            calculated_metrics = pd.DataFrame.from_records(metrics_data, columns = ['class', 'TP', 'FP', 'FN', 'Accuracy', 'Precision', 'Recall', 'F1', 'mAP'])
+            calculated_metrics.to_excel(writer, sheet_name = 'metrics', index = False)
+            all_epochs_metrics_validation.append(calculated_metrics)
+            calcuated_confusion_matrix = pd.DataFrame.from_records(parsed_confusion_matrix, columns = [' ', *names, 'background'])
+            calcuated_confusion_matrix.to_excel(writer, sheet_name = 'confusion_matrix', index = False)
+            writer.save()
+            
+            print(f'Processing epoch {epoch} completed\n')
+            
+print('Evaluation Metrics completed\n')
+
+
+# ### Graphs
+
+# In[15]:
+
+
+os.makedirs(os.path.join(training_result_path,'graphs'), exist_ok = True)
+
+
+# In[16]:
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+# In[17]:
+
+
+data = os.path.join(training_result_path,'results.csv')
+plt_save_path = os.path.join(training_result_path,'graphs')
+
+
+# In[18]:
+
+
+data_df = pd.read_csv(data)
+data_df = data_df[(data_df["               epoch"] % epoch_interval ==  0) | (data_df["               epoch"] % best_epoch ==  0)]
+epoch = data_df[["               epoch"]]
+
+
+# In[19]:
+
+
+#Train
+# train_accuracy = data_df[["metrics/mAP_0.5:0.95"]]
+train_accuracy = [calculated_metrics[calculated_metrics["Accuracy"] != 0]["Accuracy"].mean() for calculated_metrics in all_epochs_metrics_training]
+train_loss = data_df[["      train/cls_loss"]]
+train_IOU = 1 - data_df[["      train/box_loss"]]
+# train_precision = data_df[["   metrics/precision"]]
+# train_recall = data_df[["      metrics/recall"]]
+train_precision = [calculated_metrics[calculated_metrics["Precision"] != 0]["Precision"].mean() for calculated_metrics in all_epochs_metrics_training]
+train_recall = [calculated_metrics[calculated_metrics["Recall"] != 0]["Recall"].mean() for calculated_metrics in all_epochs_metrics_training]
+train_f1 = [calculated_metrics[calculated_metrics["F1"] != 0]["F1"].mean() for calculated_metrics in all_epochs_metrics_training]
+train_mAP = [calculated_metrics[calculated_metrics["mAP"] != 0]["mAP"].mean() for calculated_metrics in all_epochs_metrics_training]
+#Validation
+Validation_loss = data_df[["        val/cls_loss"]]
+Validation_IOU = 1 - data_df[["        val/box_loss"]]
+Validation_accuracy = [calculated_metrics[calculated_metrics["Accuracy"] != 0]["Accuracy"].mean() for calculated_metrics in all_epochs_metrics_validation]
+Validation_precision = [calculated_metrics[calculated_metrics["Precision"] != 0]["Precision"].mean() for calculated_metrics in all_epochs_metrics_validation]
+Validation_recall = [calculated_metrics[calculated_metrics["Recall"] != 0]["Recall"].mean() for calculated_metrics in all_epochs_metrics_validation]
+Validation_f1 = [calculated_metrics[calculated_metrics["F1"] != 0]["F1"].mean() for calculated_metrics in all_epochs_metrics_validation]
+Validation_mAP = [calculated_metrics[calculated_metrics["mAP"] != 0]["mAP"].mean() for calculated_metrics in all_epochs_metrics_validation]
+
+
+# In[20]:
+
+
+accuracy_path = os.path.join(plt_save_path,"Train_Accuracy.jpg")
+plt.figure(figsize=(5, 4))
+plt.plot(epoch,train_accuracy ,label='train accuracy',marker=".")
+plt.xlabel("Epochs")
+plt.ylabel("Accuracy")
+plt.legend()
+plt.title('Training Accuracy')
+plt.savefig(accuracy_path)
+
+
+# In[21]:
+
+
+loss_path = os.path.join(plt_save_path,"Train_loss.jpg")
+plt.figure(figsize=(5, 4))
+plt.plot(epoch,train_loss ,label='train loss',marker=".")
+plt.xlabel("Epochs")
+plt.ylabel("Loss")
+plt.legend()
+plt.title('Training Loss')
+plt.savefig(loss_path)
+
+
+# In[22]:
+
+
+train_IOU_path = os.path.join(plt_save_path,"Train_IOU.jpg")
+plt.figure(figsize=(5, 4))
+plt.plot(epoch,train_IOU ,label='Train IOU',marker=".")
+plt.xlabel("Epochs")
+plt.ylabel("Train IOU")
+plt.legend()
+plt.title('Training IOU')
+plt.savefig(train_IOU_path)
+
+
+# In[23]:
+
+
+train_Precision_path = os.path.join(plt_save_path,"Train_Precision.jpg")
+plt.figure(figsize=(5, 4))
+plt.plot(epoch,train_precision ,label='Train Precision',marker=".")
+plt.xlabel("Epochs")
+plt.ylabel("Train Precision")
+plt.legend()
+plt.title('Training Precision')
+plt.savefig(train_Precision_path)
+
+
+# In[24]:
+
+
+train_Recall_path = os.path.join(plt_save_path,"Train_Recall.jpg")
+plt.figure(figsize=(5, 4))
+plt.plot(epoch,train_recall ,label='Train Recall',marker=".")
+plt.xlabel("Epochs")
+plt.ylabel("Train Recall")
+plt.legend()
+plt.title('Training Recall')
+plt.savefig(train_Recall_path)
+
+
+# In[25]:
+
+
+Validation_loss_path = os.path.join(plt_save_path,"Validation_loss.jpg")
+plt.figure(figsize=(5, 4))
+plt.plot(epoch,Validation_loss ,label='Test Loss', color = 'c',marker=".")
+plt.xlabel("Epochs")
+plt.ylabel("Validation Loss")
+plt.legend()
+plt.title('Validation Loss')
+plt.savefig(Validation_loss_path)
+
+
+# In[26]:
+
+
+Validation_IOU_path = os.path.join(plt_save_path,"Validation_IOU.jpg")
+plt.figure(figsize=(5, 4))
+plt.plot(epoch,Validation_IOU ,label='Validation IOU', color = 'c',marker=".")
+plt.xlabel("Epochs")
+plt.ylabel("Validation IOU")
+plt.legend()
+plt.title('Validation IOU')
+plt.savefig(Validation_IOU_path)
+
+
+# In[27]:
+
+
+Validation_accuracy_path = os.path.join(plt_save_path,"Validation_Accuracy.jpg")
+plt.figure(figsize=(5, 4))
+plt.plot(full_epoch_list,Validation_accuracy ,label='Validation accuracy', color = 'c',marker=".")
+plt.xlabel("Epochs")
+plt.ylabel("Accuracy")
+plt.legend()
+plt.title('Validation Accuracy')
+plt.savefig(Validation_accuracy_path)
+
+
+# In[28]:
+
+
+Validation_Precision_path = os.path.join(plt_save_path,"Validation_Precision.jpg")
+plt.figure(figsize=(5, 4))
+plt.plot(full_epoch_list,Validation_precision ,label='Validation Precision', color = 'c',marker=".")
+plt.xlabel("Epochs")
+plt.ylabel("Validation Precision")
+plt.legend()
+plt.title('Validation Precision')
+plt.savefig(Validation_Precision_path)
+
+
+# In[29]:
+
+
+Validation_Recall_path = os.path.join(plt_save_path,"Validation_Recall.jpg")
+plt.figure(figsize=(5, 4))
+plt.plot(full_epoch_list,Validation_recall,label='Validation Recall', color = 'c',marker=".")
+plt.xlabel("Epochs")
+plt.ylabel("Validation Recall")
+plt.legend()
+plt.title('Validation Recall')
+plt.savefig(Validation_Recall_path)
+
+
+# In[30]:
+
+
+train_f1_path = os.path.join(plt_save_path,"Train_F1.jpg")
+plt.figure(figsize=(5, 4))
+plt.plot(full_epoch_list,train_f1,label='Train F1',marker=".")
+plt.xlabel("Epochs")
+plt.ylabel("Train F1")
+plt.legend()
+plt.title('Train F1')
+plt.savefig(train_f1_path)
+
+
+# In[31]:
+
+
+Validation_f1_path = os.path.join(plt_save_path,"Validation_F1.jpg")
+plt.figure(figsize=(5, 4))
+plt.plot(full_epoch_list,Validation_f1,label='Validation F1', color = 'c',marker=".")
+plt.xlabel("Epochs")
+plt.ylabel("Validation F1")
+plt.legend()
+plt.title('Validation F1')
+plt.savefig(Validation_f1_path)
+
+
+# In[32]:
+
+
+train_mAP_path = os.path.join(plt_save_path,"Train_mAP.jpg")
+plt.figure(figsize=(5, 4))
+plt.plot(full_epoch_list,train_mAP,label='Train mAP',marker=".")
+plt.xlabel("Epochs")
+plt.ylabel("Train mAP")
+plt.legend()
+plt.title('Train mAP')
+plt.savefig(train_mAP_path)
+
+
+# In[33]:
+
+
+Validation_mAP_path = os.path.join(plt_save_path,"Validation_mAP.jpg")
+plt.figure(figsize=(5, 4))
+plt.plot(full_epoch_list,Validation_mAP,label='Validation mAP', color = 'c',marker=".")
+plt.xlabel("Epochs")
+plt.ylabel("Validation mAP")
+plt.legend()
+plt.title('Validation mAP')
+plt.savefig(Validation_mAP_path)
+
+
+# In[34]:
+
+
+# # Train
+# print('train_accuracy', max(train_accuracy.values.tolist()))
+# print('train_loss', min(train_loss.values.tolist()))
+# print('train_IOU', max(train_IOU.values.tolist()))
+# print('train_precision', max(train_precision.values.tolist()))
+# print('train_recall', max(train_recall.values.tolist()))
+# print('train_f1', max(train_f1))
+# print('train_mAP', max(train_mAP))
+# # Test
+# print('test_accuracy', max(test_accuracy))
+# print('test_loss', min(test_loss.values.tolist()))
+# print('test_IOU', max(test_IOU.values.tolist()))
+# print('test_precision', max(test_precision))
+# print('test_recall', max(test_recall))
+# print('test_f1', max(test_f1))
+# print('test_mAP', max(test_mAP))
+
+
+# In[35]:
+
+
+#best_weight_index = train_mAP.index(max(train_mAP))
+best_weight_index = full_epoch_list.index(best_epoch)
+print('Best Epoch:', full_epoch_list[best_weight_index])
+# Train
+# print('train_accuracy:', train_accuracy.values.tolist()[best_weight_index])
+print('train_accuracy:', train_accuracy[best_weight_index])
+print('train_loss:', train_loss.values.tolist()[best_weight_index])
+print('train_IOU:', train_IOU.values.tolist()[best_weight_index])
+# print('train_precision:', train_precision.values.tolist()[best_weight_index])
+# print('train_recall:', train_recall.values.tolist()[best_weight_index])
+print('train_precision:', train_precision[best_weight_index])
+print('train_recall:', train_recall[best_weight_index])
+print('train_f1:', train_f1[best_weight_index])
+print('train_mAP:', train_mAP[best_weight_index])
+# Validation
+print('Validation_accuracy:', Validation_accuracy[best_weight_index])
+print('Validation_loss:', Validation_loss.values.tolist()[best_weight_index])
+print('Validation_IOU:', Validation_IOU.values.tolist()[best_weight_index])
+print('Validation_precision:', Validation_precision[best_weight_index])
+print('Validation_recall:', Validation_recall[best_weight_index])
+print('Validation_f1:', Validation_f1[best_weight_index])
+print('Validation_mAP:', Validation_mAP[best_weight_index])
+
+
+# In[ ]:
+
+
+
+

@@ -1,440 +1,353 @@
-hi team how are you
-i am fine
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[1]:
+
+
+import cv2
 import os
-import yaml
-import pandas as pd
+import pathlib
+import numpy as np
+from tqdm import tqdm
+import pandas
 
-training_result_path = r""
 
-eval_dataset = 'train' # train / val
-logfile = os.path.join(training_result_path,"train_tp_fp_fn_log.txt")
-yamlfile = r""
-epoch_interval = 10
-best_epoch = 259
-os.makedirs(os.path.join(training_result_path,'metrics'), exist_ok = True)
+# In[2]:
 
-with open(yamlfile, errors='ignore') as fyamlfile:
-        opt = yaml.safe_load(fyamlfile)
+
+class_file = r"C:\Users\201039530\OneDrive - Alstom\labelImg-master\data\predefined_classes.txt"
+#gt_txt_path = r"C:\Users\201039530\OneDrive - Alstom\Annotations\Track_layout_Automation\signaling_elements\TrackLayoutImages_SignalingElements\Big_component_modified_component\labels\valid\2_1.txt"
+#dt_txt_path = r"C:\Users\201039530\OneDrive - Alstom\yolov5_changed_eval\runs\detect\Track_Layout_Automation_big_signaling_elements_imgz_1408_yolov5l_modified_annotations_10_classes\exp4\labels\2_1.txt"
+#source_dir = './data/'
+pred_dir = r"C:\Users\201039530\OneDrive - Alstom\yolov3-master\runs\detect\Track_Layout_Automation_signaling_elements_blockwise_21_classes_modified_annotations_yolov5l\exp\labels"
+source_dir = r"C:\Users\201039530\OneDrive - Alstom\Annotations\Track_layout_Automation\signaling_elements\TrackLayoutImages_SignalingElements\blockwise_split_images_labels_608\labels\valid"
+excel_name = "TLASE_blockwise_yolov3_imgz_608_21_classes_yolov5l_modified_annotations"
+join = os.path.join
+save_dir = r"C:\Users\201039530\OneDrive - Alstom\Track_Layout_Automation\comparison_yolov3_vs_yolov5\Performance_Metrics\yolov3"
+width = 3570
+height = 2523
+
+
+# In[3]:
+
+
+labels = []
+
+def load_class(class_file):
+    global labels
+    file = open(class_file)
+    labels = [x.strip() for x in file.readlines()]
+    labels.append('_negative_')
+
+
+def load_annotation_from_txt(file_path, gt = False):
+    with open(file_path, 'r') as f:
+        annotations = f.readlines()
+        if gt:
+            annotations = process_annotations(annotations)
+    f.close()
+    #print(annotations)
+    return annotations
+
+def process_annotations(annotations):
+    clean_annotations = []
+    for annotation in annotations:
+        annotation = annotation.strip()
+        annotation = [float(item) for item in annotation.split()]
+        annotation[0] = int(annotation[0])
+        clean_annotations.append(annotation)
+    return clean_annotations
+
+
+def get_absolute_values(ann):
+    label, x_norm, y_norm, w_norm, h_norm = ann
+    # extract absolute values from normalised values
+    x_cen = int(x_norm * width)
+    y_cen = int(y_norm * height)
+    box_width = int(w_norm * width)
+    box_height = int(h_norm * height)
+    # calc absolute x, y (top left)
+    x = x_cen - int(box_width/2)
+    y = y_cen - int(box_height/2)
+    return(labels[label], x, y, box_width, box_height)
+
+def load_ground_truth(path):
+    annotations = load_annotation_from_txt(path, gt = True)
+    annotations = [get_absolute_values(obj) for obj in annotations] # annotations = [[label, x, y, w, h]]
+    return annotations
+
+
+def load_predictions(path, conf_thresh = 0.5):
+    dt_df = pandas.read_csv(path, sep=" ", names=['class_id_dt','x_cen','y_cen','width','height','confidence'])
+    dt_df = dt_df.sort_values(by=['class_id_dt'],ignore_index=True)
+    dt_df = dt_df.loc[:,['class_id_dt','confidence','x_cen','y_cen','width','height']]
+    dt_df['x_cen']= (dt_df['x_cen'] * width) - ((dt_df['width']* width) /2)
+    dt_df['y_cen']= (dt_df['y_cen'] * height) - ((dt_df['height']* height)/2)
+    dt_df['width']= (dt_df['width'] * width)
+    dt_df['height']= (dt_df['height'] * height)
+    dt_df['x_cen'] = dt_df['x_cen'].astype(int)
+    dt_df['y_cen'] = dt_df['y_cen'].astype(int)
+    dt_df['width'] = dt_df['width'].astype(int)
+    dt_df['height'] = dt_df['height'].astype(int)
+    dt_df = dt_df[dt_df['confidence'] >= conf_thresh]
+    for i in range(dt_df.shape[0]):
+        dt_df['class_id_dt'].iloc[i] = labels[dt_df['class_id_dt'].iloc[i]]
+    predictions_processed = list(dt_df.itertuples(index=False, name=None))
+    return predictions_processed
+
+def bb_intersection_over_union(boxA, boxB):
+    # determine the (x, y)-coordinates of the intersection rectangle
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+    # compute the area of intersection rectangle
+    interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
+    # compute the area of both the prediction and ground-truth
+    # rectangles
+    boxAArea = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
+    boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
+    # compute the intersection over union by taking the intersection
+    # area and dividing it by the sum of prediction + ground-truth
+    # areas - the interesection area
+    iou = interArea / float(boxAArea + boxBArea - interArea)
+    # return the intersection over union value
+    return iou
+
+def calculate_results(source_dir, pred_dir, iou_threshold):
+    results = []
+    for file in tqdm(os.listdir(source_dir)):
+        #print(os.listdir(source_dir))
+        try:
+            if file.endswith('txt'):
+                annotations = load_ground_truth(join(source_dir, file))
+                #print(source_dir)
+                predictions_path = join(pred_dir, file)
+                #print(predictions_path)
+                predictions = load_predictions(predictions_path,conf_thresh = 0.5)
+
+                # results specific to current file
+                file_results = []
+
+                # if predictions/annotations are empty, add _negative_ label and zero bb
+
+                # for ground truth, gts = ground truths
+                if len(annotations) > 0:
+                    gts = [[label, [x, y, x+w, y+h]] for label, x, y, w, h in annotations]
+                else:
+                    gts = [['_negative_', [0, 0, 0, 0]]]
+
+                # for predictions, dts = detections
+                if len(predictions) > 0:
+                    dts = [[label, [x, y, x + w, y + h]] for label, conf, x, y, w, h in predictions]
+                else:
+                    dts = [['_negative_', [0, 0, 0, 0]]]
+
+                # calculate iou for gt bbox against pred bbox
+                for gt_label, gt_bbox in gts:
+                    for dt_label, dt_bbox in dts:
+                        iou = bb_intersection_over_union(gt_bbox, dt_bbox)
+                        if (iou > iou_threshold) & (gt_label != '_negative_') & (dt_label != '_negative_'):
+                            file_results.append([file, gt_label, gt_bbox, dt_label, dt_bbox, iou, dt_label == gt_label])
+
+                # get the bboxes added for gt and pred in file_results
+                if len(file_results) > 0:
+                    file_results_np = np.array(file_results, dtype = object)
+                    added_gt_bboxes = file_results_np[:, 2].tolist()
+                    added_dt_bboxes = file_results_np[:, 4].tolist()
+                else:
+                    added_gt_bboxes = []
+                    added_dt_bboxes = []
+
+                # if annotation is not added in results, append it in results
+                for label, bbox in gts:
+                    if bbox not in added_gt_bboxes:
+                        file_results.append([file, label, bbox, '_negative_', [0, 0, 0, 0], 0.0, False])
+
+                # if prediction is not added in results, append it in results
+                for label, bbox in dts:
+                    if bbox not in added_dt_bboxes:
+                        file_results.append([file, '_negative_', [0, 0, 0, 0], label, bbox, 0.0, False])
+                [results.append(x) for x in file_results]
+                print(" Done for", file)
+
+        except Exception as e:
+            #print("Exception",e)
+            if not os.path.isfile(file):
+                print('missing', file)
+            else:
+                print(file)
         
-nc = len(opt['names']) # number of classes
-names = []
-for i  in range(nc):
-    names.append(opt['names'][i])
-    
-print(names)
+        # load the results array to pandas dataframe
+        df = pandas.DataFrame()
+        df = pandas.DataFrame.from_records(results, columns = ['file', 'gt_label', 'gt_bbox', 'pred_label', 'pred_bbox', 'iou', 'valid'])
+        df.reset_index(inplace=True)
+        
+    return df
 
 
-with open(logfile, 'r') as flogfile:
-    logfilelines = flogfile.readlines()
+# ## export data to pandas dataframe
 
-def getMetrics(tp, fp, fn):
-    metrics_data = []
-    for class_iterator in range(nc):
-        class_name = names[class_iterator]
-        class_tp, class_fp, class_fn = tp[class_iterator], fp[class_iterator], fn[class_iterator]
-        # print(class_tp, class_fp, class_fn)
-        try:    
-            class_gt = class_tp + class_fn
-            r = class_tp / (class_tp + class_fn)
-            p = class_tp / (class_tp + class_fp)
-            acc = class_tp / class_gt * 100
-            f1 = (2 * p * r) / (p + r)
-            mAP = (class_tp * class_tp) / ((class_tp + class_fn) * (class_tp + class_fp))
-            metrics_data.append([class_name, class_tp, class_fp, class_fn, acc, p, r, f1, mAP])
+
+# ## Write results to excel sheet
+
+def create_excel_writer(excel_name, save_dir):
+    # excel_name = basename(pred_dir[:-1]) if pred_dir.endswith('/') else basename(pred_dir)
+    # excel_save_dir = pred_dir
+    excel_dir = join(save_dir, excel_name + '.xlsx')
+    writer = pandas.ExcelWriter(excel_dir, engine = 'xlsxwriter')
+    return writer
+
+
+# ## Calculate Precision and Recall
+
+
+def calculate_precision_recall(df, writer):
+    pr_data = []
+    for label in labels:
+        try:
+            tp = len(df[(df['gt_label'] == label) & (df['valid'] == True)])
+            fn = len(df[(df['gt_label'] == label) & (df['valid'] == False)])
+            fp = len(df[(df['pred_label'] == label) & (df['valid'] == False)])
+            gt = len(df[df['gt_label'] == label])
+            accuracy = tp/gt*100
+            precision = tp/(tp + fp)
+            recall = tp/(tp + fn)
+            f1 = 2 * ((precision * recall)/(precision + recall))
+            iou = df[(df['gt_label'] == label) & (df['valid'] == True)]['iou'].mean()
+            #print(label, 'iou: ', iou)
+            pr_data.append([label, tp, fp, fn, precision, recall, f1, iou, accuracy, gt])
+            #image_wise_result_df.append
         except:
-            # Divide by zero in case of 0 tp / fp / fn
-            metrics_data.append([class_name, class_tp, class_fp, class_fn, 0, 0, 0, 0, 0])
-    # print(metrics_data)
-    return metrics_data
+            # if divide by zero error occurs append label, tp, fp, fn and 0 for (precision, recall)
+            # happens when there are no tp
+            pr_data.append([label, tp, fp, fn, 0, 0, 0, 0, 0, gt])
+
+    precision_recall = pandas.DataFrame.from_records(pr_data, columns = ['class', 'TP', 'FP', 'FN', 'Precision', 'Recall', 'F1 score', 'iou', 'accuracy', 'ground truth'])
+    precision_recall.to_excel(writer, sheet_name = 'metrics', index = False)
+    return precision_recall
+    
+def calculate_confusion_matrix(df, writer):
+    cf_records = []
+    for gt_label in labels:
+        row = []
+        row.append(gt_label)
+        #print(gt_label)
+        for pred_label in labels:
+            row.append(len(df[(df['gt_label'] == gt_label) & (df['pred_label'] == pred_label)]))
+        cf_records.append(row)
+
+    confusion_matrix = pandas.DataFrame.from_records(cf_records, columns = [' ', *labels])
+    confusion_matrix.to_excel(writer, sheet_name = 'confusion matrix', index = False)
+    return confusion_matrix
+def imagewise_metrixs(df,writer):
+    im_data = []
+    for i in range(len(df['file'].unique())):
+        #print(((df['file'].unique()))[i])
+        df_per_image = df.loc[list(np.where(df["file"] == list((df['file'].unique()))[i]))[0][0]:list(np.where(df["file"] == list((df['file'].unique()))[i]))[0][-1],]
+        #print(((df['file'].unique()))[i],"---",df_per_image.shape)
+        for label in labels:
+            try:
+                #print(label)
+                tp = len(df_per_image[(df_per_image['gt_label'] == label) & (df_per_image['valid'] == True)])
+                fn = len(df_per_image[(df_per_image['gt_label'] == label) & (df_per_image['valid'] == False)])
+                fp = len(df_per_image[(df_per_image['pred_label'] == label) & (df_per_image['valid'] == False)])
+                gt = len(df_per_image[df_per_image['gt_label'] == label])
+                accuracy = tp/gt*100
+                #precision = tp/(tp + fp)
+                #recall = tp/(tp + fn)
+                #f1 = 2 * ((precision * recall)/(precision + recall))
+                #iou = df_per_image[(df_per_image['gt_label'] == label) & (df_per_image['valid'] == True)]['iou'].mean()
+                #im_data.append([label, tp, fp, fn, precision, recall, f1, iou, accuracy, gt])
+                im_data.append([list((df['file'].unique()))[i],label, tp, fp, fn, gt, accuracy])
+                #print(im_data)
+                #precision_recall_imagewise = pandas.DataFrame.from_records(im_data, columns = ['class', 'TP', 'FP', 'FN', 'Precision', 'Recall', 'F1 score', 'iou', 'accuracy', 'ground truth'])
+                #precision_recall_imagewise = pandas.DataFrame.from_records(im_data, columns = ['class', 'TP', 'FP', 'FN'])
+                #print(precision_recall_imagewise)
+            except:
+                # if divide by zero error occurs append label, tp, fp, fn and 0 for (precision, recall)
+                # happens when there are no tp
+                #im_data.append([label, tp, fp, fn, 0, 0, 0, 0, 0, gt])
+                im_data.append([list((df['file'].unique()))[i],label, tp, fp, fn, gt, accuracy])
+                #precision_recall_imagewise = pandas.DataFrame.from_records(im_data, columns = ['class', 'TP', 'FP', 'FN', 'Precision', 'Recall', 'F1 score', 'iou', 'accuracy', 'ground truth'])
+            precision_recall_imagewise = pandas.DataFrame.from_records(im_data, columns = ['file_name','class', 'TP', 'FP', 'FN', 'GT', 'Accuracy'])
+        #precision_recall_imagewise.to_excel(writer, sheet_name = 'precision_recall_imagewise', index = False)
+    #precision_recall_imagewise
+    #writer = create_excel_writer("precision_recall_imagewise", save_dir)
+    precision_recall_imagewise.to_excel(writer, sheet_name = 'precision_recall_imagewise', index = False)
+    #precision_recall_imagewise.to_csv(file_name)
+    return precision_recall_imagewise
+
+
+# In[4]:
+
+
+#load_class(class_file)
+
+
+# In[5]:
+
+
+#labels
+
+
+# In[6]:
+
+
+#load_annotation_from_txt(gt_txt_path)
+
+
+# In[7]:
+
+
+#load_predictions(dt_txt_path)
+
+
+# In[8]:
+
+
+#load_ground_truth(join(source_dir, "8_1.txt"))
+
+
+# In[9]:
+
+
+def process_results(source_dir, pred_dir, excel_name, iou_threshold = 0.4):
+    
+    if not os.path.isdir(source_dir):
+        print('SOURCE DIR DOES NOT EXIST', source_dir)
+        return
+    if not os.path.isdir(pred_dir):
+        print('PRED DIR DOES NOT EXIST', pred_dir)
+        return
+
+    writer = create_excel_writer(excel_name, save_dir)
+
+    results = calculate_results(source_dir, pred_dir, iou_threshold)
+
+    results.to_excel(writer, 'results')
+
+    precision_recall = calculate_precision_recall(results, writer)
+
+    confusion_matrix = calculate_confusion_matrix(results, writer)
+    
+    precision_recall_imagewise = imagewise_metrixs(results, writer)
+
+    writer.save()
+    
+    return {'confusion_matrix': confusion_matrix, 'precision_recall': precision_recall}    
 
 
 # In[10]:
 
 
-def parseConfusionMatrix(raw_confusion_matrix):
-    parsed_confusion_matrix = []
-    conf_names = names + ['background']
-    for i in range(len(raw_confusion_matrix)):
-        row = raw_confusion_matrix[i].replace('\n', '').replace(']', '').split()[1:]
-        row = [conf_names[i]] + [int(float(x)) for x in row]
-        parsed_confusion_matrix.append(row)
-    return parsed_confusion_matrix
+process_results(source_dir, pred_dir, excel_name)
 
 
-# In[11]:
+# In[ ]:
 
 
-full_epoch_list= []
-all_epochs_metrics_training = []
-print('Starting Evaluation Metrics\n')
-for i in range(len(logfilelines)):
-    line = logfilelines[i].replace('\n', '')
-    if 'Epoch' in line:    
-        linesplit = line.split()
-        epoch = int(linesplit[1])
-        if (epoch % epoch_interval == 0) or (epoch % best_epoch == 0):
-            full_epoch_list.append(epoch)
-            print(f'Processing epoch {epoch}')
-            tp = logfilelines[i+1].replace('\n', '').replace(']', '').split()[2:]
-            tp = [int(float(x)) for x in tp]
-            fp = logfilelines[i+2].replace('\n', '').replace(']', '').split()[2:]
-            fp = [int(float(x)) for x in fp]
-            fn = logfilelines[i+3].replace('\n', '').replace(']', '').split()[2:]
-            fn = [int(float(x)) for x in fn]
-            # print(tp, fp, fn)
-            raw_confusion_matrix = logfilelines[i+5:i+5+nc+1]
-            parsed_confusion_matrix = parseConfusionMatrix(raw_confusion_matrix)
-            metrics_data = getMetrics(tp, fp, fn)
-            
-            writer = pd.ExcelWriter(f'{training_result_path}/metrics/{eval_dataset}_{epoch}.xlsx', engine = 'xlsxwriter')
-            calculated_metrics = pd.DataFrame.from_records(metrics_data, columns = ['class', 'TP', 'FP', 'FN', 'Accuracy', 'Precision', 'Recall', 'F1', 'mAP'])
-            calculated_metrics.to_excel(writer, sheet_name = 'metrics', index = False)
-            all_epochs_metrics_training.append(calculated_metrics)
-            calcuated_confusion_matrix = pd.DataFrame.from_records(parsed_confusion_matrix, columns = [' ', *names, 'background'])
-            calcuated_confusion_matrix.to_excel(writer, sheet_name = 'confusion_matrix', index = False)
-            writer.save()
-            
-            print(f'Processing epoch {epoch} completed\n')
-            
-print('Evaluation Metrics completed\n')
 
-
-# ### Validation Dataset
-
-# In[12]:
-
-
-eval_dataset = 'val' # train / val
-logfile = os.path.join(training_result_path,"val_tp_fp_fn_log.txt")
-
-
-# In[13]:
-
-
-with open(logfile, 'r') as flogfile:
-    logfilelines = flogfile.readlines()
-
-
-# In[14]:
-
-
-full_epoch_list= []
-all_epochs_metrics_validation = []
-print('Starting Evaluation Metrics\n')
-for i in range(len(logfilelines)):
-    line = logfilelines[i].replace('\n', '')
-    if 'Epoch' in line:    
-        linesplit = line.split()
-        epoch = int(linesplit[1])
-        if (epoch % epoch_interval == 0) or (epoch % best_epoch == 0):
-            full_epoch_list.append(epoch)
-            print(f'Processing epoch {epoch}')
-            tp = logfilelines[i+1].replace('\n', '').replace(']', '').split()[2:]
-            tp = [int(float(x)) for x in tp]
-            fp = logfilelines[i+2].replace('\n', '').replace(']', '').split()[2:]
-            fp = [int(float(x)) for x in fp]
-            fn = logfilelines[i+3].replace('\n', '').replace(']', '').split()[2:]
-            fn = [int(float(x)) for x in fn]
-            # print(tp, fp, fn)
-            raw_confusion_matrix = logfilelines[i+5:i+5+nc+1]
-            parsed_confusion_matrix = parseConfusionMatrix(raw_confusion_matrix)
-            metrics_data = getMetrics(tp, fp, fn)
-            
-            writer = pd.ExcelWriter(f'{training_result_path}/metrics/{eval_dataset}_{epoch}.xlsx', engine = 'xlsxwriter')
-            calculated_metrics = pd.DataFrame.from_records(metrics_data, columns = ['class', 'TP', 'FP', 'FN', 'Accuracy', 'Precision', 'Recall', 'F1', 'mAP'])
-            calculated_metrics.to_excel(writer, sheet_name = 'metrics', index = False)
-            all_epochs_metrics_validation.append(calculated_metrics)
-            calcuated_confusion_matrix = pd.DataFrame.from_records(parsed_confusion_matrix, columns = [' ', *names, 'background'])
-            calcuated_confusion_matrix.to_excel(writer, sheet_name = 'confusion_matrix', index = False)
-            writer.save()
-            
-            print(f'Processing epoch {epoch} completed\n')
-            
-print('Evaluation Metrics completed\n')
-
-
-# ### Graphs
-
-# In[15]:
-
-
-os.makedirs(os.path.join(training_result_path,'graphs'), exist_ok = True)
-
-
-# In[16]:
-
-
-import numpy as np
-import matplotlib.pyplot as plt
-
-
-# In[17]:
-
-
-data = os.path.join(training_result_path,'results.csv')
-plt_save_path = os.path.join(training_result_path,'graphs')
-
-
-# In[18]:
-
-
-data_df = pd.read_csv(data)
-data_df = data_df[(data_df["               epoch"] % epoch_interval ==  0) | (data_df["               epoch"] % best_epoch ==  0)]
-epoch = data_df[["               epoch"]]
-
-
-# In[19]:
-
-
-#Train
-# train_accuracy = data_df[["metrics/mAP_0.5:0.95"]]
-train_accuracy = [calculated_metrics[calculated_metrics["Accuracy"] != 0]["Accuracy"].mean() for calculated_metrics in all_epochs_metrics_training]
-train_loss = data_df[["      train/cls_loss"]]
-train_IOU = 1 - data_df[["      train/box_loss"]]
-# train_precision = data_df[["   metrics/precision"]]
-# train_recall = data_df[["      metrics/recall"]]
-train_precision = [calculated_metrics[calculated_metrics["Precision"] != 0]["Precision"].mean() for calculated_metrics in all_epochs_metrics_training]
-train_recall = [calculated_metrics[calculated_metrics["Recall"] != 0]["Recall"].mean() for calculated_metrics in all_epochs_metrics_training]
-train_f1 = [calculated_metrics[calculated_metrics["F1"] != 0]["F1"].mean() for calculated_metrics in all_epochs_metrics_training]
-train_mAP = [calculated_metrics[calculated_metrics["mAP"] != 0]["mAP"].mean() for calculated_metrics in all_epochs_metrics_training]
-#Validation
-Validation_loss = data_df[["        val/cls_loss"]]
-Validation_IOU = 1 - data_df[["        val/box_loss"]]
-Validation_accuracy = [calculated_metrics[calculated_metrics["Accuracy"] != 0]["Accuracy"].mean() for calculated_metrics in all_epochs_metrics_validation]
-Validation_precision = [calculated_metrics[calculated_metrics["Precision"] != 0]["Precision"].mean() for calculated_metrics in all_epochs_metrics_validation]
-Validation_recall = [calculated_metrics[calculated_metrics["Recall"] != 0]["Recall"].mean() for calculated_metrics in all_epochs_metrics_validation]
-Validation_f1 = [calculated_metrics[calculated_metrics["F1"] != 0]["F1"].mean() for calculated_metrics in all_epochs_metrics_validation]
-Validation_mAP = [calculated_metrics[calculated_metrics["mAP"] != 0]["mAP"].mean() for calculated_metrics in all_epochs_metrics_validation]
-
-
-# In[20]:
-
-
-accuracy_path = os.path.join(plt_save_path,"Train_Accuracy.jpg")
-plt.figure(figsize=(5, 4))
-plt.plot(epoch,train_accuracy ,label='train accuracy',marker=".")
-plt.xlabel("Epochs")
-plt.ylabel("Accuracy")
-plt.legend()
-plt.title('Training Accuracy')
-plt.savefig(accuracy_path)
-
-
-# In[21]:
-
-
-loss_path = os.path.join(plt_save_path,"Train_loss.jpg")
-plt.figure(figsize=(5, 4))
-plt.plot(epoch,train_loss ,label='train loss',marker=".")
-plt.xlabel("Epochs")
-plt.ylabel("Loss")
-plt.legend()
-plt.title('Training Loss')
-plt.savefig(loss_path)
-
-
-# In[22]:
-
-
-train_IOU_path = os.path.join(plt_save_path,"Train_IOU.jpg")
-plt.figure(figsize=(5, 4))
-plt.plot(epoch,train_IOU ,label='Train IOU',marker=".")
-plt.xlabel("Epochs")
-plt.ylabel("Train IOU")
-plt.legend()
-plt.title('Training IOU')
-plt.savefig(train_IOU_path)
-
-
-# In[23]:
-
-
-train_Precision_path = os.path.join(plt_save_path,"Train_Precision.jpg")
-plt.figure(figsize=(5, 4))
-plt.plot(epoch,train_precision ,label='Train Precision',marker=".")
-plt.xlabel("Epochs")
-plt.ylabel("Train Precision")
-plt.legend()
-plt.title('Training Precision')
-plt.savefig(train_Precision_path)
-
-
-# In[24]:
-
-
-train_Recall_path = os.path.join(plt_save_path,"Train_Recall.jpg")
-plt.figure(figsize=(5, 4))
-plt.plot(epoch,train_recall ,label='Train Recall',marker=".")
-plt.xlabel("Epochs")
-plt.ylabel("Train Recall")
-plt.legend()
-plt.title('Training Recall')
-plt.savefig(train_Recall_path)
-
-
-# In[25]:
-
-
-Validation_loss_path = os.path.join(plt_save_path,"Validation_loss.jpg")
-plt.figure(figsize=(5, 4))
-plt.plot(epoch,Validation_loss ,label='Test Loss', color = 'c',marker=".")
-plt.xlabel("Epochs")
-plt.ylabel("Validation Loss")
-plt.legend()
-plt.title('Validation Loss')
-plt.savefig(Validation_loss_path)
-
-
-# In[26]:
-
-
-Validation_IOU_path = os.path.join(plt_save_path,"Validation_IOU.jpg")
-plt.figure(figsize=(5, 4))
-plt.plot(epoch,Validation_IOU ,label='Validation IOU', color = 'c',marker=".")
-plt.xlabel("Epochs")
-plt.ylabel("Validation IOU")
-plt.legend()
-plt.title('Validation IOU')
-plt.savefig(Validation_IOU_path)
-
-
-# In[27]:
-
-
-Validation_accuracy_path = os.path.join(plt_save_path,"Validation_Accuracy.jpg")
-plt.figure(figsize=(5, 4))
-plt.plot(full_epoch_list,Validation_accuracy ,label='Validation accuracy', color = 'c',marker=".")
-plt.xlabel("Epochs")
-plt.ylabel("Accuracy")
-plt.legend()
-plt.title('Validation Accuracy')
-plt.savefig(Validation_accuracy_path)
-
-
-# In[28]:
-
-
-Validation_Precision_path = os.path.join(plt_save_path,"Validation_Precision.jpg")
-plt.figure(figsize=(5, 4))
-plt.plot(full_epoch_list,Validation_precision ,label='Validation Precision', color = 'c',marker=".")
-plt.xlabel("Epochs")
-plt.ylabel("Validation Precision")
-plt.legend()
-plt.title('Validation Precision')
-plt.savefig(Validation_Precision_path)
-
-
-# In[29]:
-
-
-Validation_Recall_path = os.path.join(plt_save_path,"Validation_Recall.jpg")
-plt.figure(figsize=(5, 4))
-plt.plot(full_epoch_list,Validation_recall,label='Validation Recall', color = 'c',marker=".")
-plt.xlabel("Epochs")
-plt.ylabel("Validation Recall")
-plt.legend()
-plt.title('Validation Recall')
-plt.savefig(Validation_Recall_path)
-
-
-# In[30]:
-
-
-train_f1_path = os.path.join(plt_save_path,"Train_F1.jpg")
-plt.figure(figsize=(5, 4))
-plt.plot(full_epoch_list,train_f1,label='Train F1',marker=".")
-plt.xlabel("Epochs")
-plt.ylabel("Train F1")
-plt.legend()
-plt.title('Train F1')
-plt.savefig(train_f1_path)
-
-
-# In[31]:
-
-
-Validation_f1_path = os.path.join(plt_save_path,"Validation_F1.jpg")
-plt.figure(figsize=(5, 4))
-plt.plot(full_epoch_list,Validation_f1,label='Validation F1', color = 'c',marker=".")
-plt.xlabel("Epochs")
-plt.ylabel("Validation F1")
-plt.legend()
-plt.title('Validation F1')
-plt.savefig(Validation_f1_path)
-
-
-# In[32]:
-
-
-train_mAP_path = os.path.join(plt_save_path,"Train_mAP.jpg")
-plt.figure(figsize=(5, 4))
-plt.plot(full_epoch_list,train_mAP,label='Train mAP',marker=".")
-plt.xlabel("Epochs")
-plt.ylabel("Train mAP")
-plt.legend()
-plt.title('Train mAP')
-plt.savefig(train_mAP_path)
-
-
-# In[33]:
-
-
-Validation_mAP_path = os.path.join(plt_save_path,"Validation_mAP.jpg")
-plt.figure(figsize=(5, 4))
-plt.plot(full_epoch_list,Validation_mAP,label='Validation mAP', color = 'c',marker=".")
-plt.xlabel("Epochs")
-plt.ylabel("Validation mAP")
-plt.legend()
-plt.title('Validation mAP')
-plt.savefig(Validation_mAP_path)
-
-
-# In[34]:
-
-
-# # Train
-# print('train_accuracy', max(train_accuracy.values.tolist()))
-# print('train_loss', min(train_loss.values.tolist()))
-# print('train_IOU', max(train_IOU.values.tolist()))
-# print('train_precision', max(train_precision.values.tolist()))
-# print('train_recall', max(train_recall.values.tolist()))
-# print('train_f1', max(train_f1))
-# print('train_mAP', max(train_mAP))
-# # Test
-# print('test_accuracy', max(test_accuracy))
-# print('test_loss', min(test_loss.values.tolist()))
-# print('test_IOU', max(test_IOU.values.tolist()))
-# print('test_precision', max(test_precision))
-# print('test_recall', max(test_recall))
-# print('test_f1', max(test_f1))
-# print('test_mAP', max(test_mAP))
-
-
-# In[35]:
-
-
-#best_weight_index = train_mAP.index(max(train_mAP))
-best_weight_index = full_epoch_list.index(best_epoch)
-print('Best Epoch:', full_epoch_list[best_weight_index])
-# Train
-# print('train_accuracy:', train_accuracy.values.tolist()[best_weight_index])
-print('train_accuracy:', train_accuracy[best_weight_index])
-print('train_loss:', train_loss.values.tolist()[best_weight_index])
-print('train_IOU:', train_IOU.values.tolist()[best_weight_index])
-# print('train_precision:', train_precision.values.tolist()[best_weight_index])
-# print('train_recall:', train_recall.values.tolist()[best_weight_index])
-print('train_precision:', train_precision[best_weight_index])
-print('train_recall:', train_recall[best_weight_index])
-print('train_f1:', train_f1[best_weight_index])
-print('train_mAP:', train_mAP[best_weight_index])
-# Validation
-print('Validation_accuracy:', Validation_accuracy[best_weight_index])
-print('Validation_loss:', Validation_loss.values.tolist()[best_weight_index])
-print('Validation_IOU:', Validation_IOU.values.tolist()[best_weight_index])
-print('Validation_precision:', Validation_precision[best_weight_index])
-print('Validation_recall:', Validation_recall[best_weight_index])
-print('Validation_f1:', Validation_f1[best_weight_index])
-print('Validation_mAP:', Validation_mAP[best_weight_index])
 
 
 # In[ ]:

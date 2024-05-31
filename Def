@@ -1,1 +1,505 @@
+##### same annotation creation file #####
+import os
 
+path = r""
+file = os.listdir(path)
+
+for i in range(121,147):
+    file_name = file[i][:-4] + ".txt"
+    file_loc  = os.path.join(path, file_name)
+    f = open(file_loc, "w")
+    ann = ["6 0.389844 0.652778 0.046354 0.166667 \n", "6 0.502344 0.672685 0.026562 0.113889 \n", "6 0.618229 0.617130 0.025000 0.212037 \n"]
+    f.writelines(ann)
+    f.close()
+
+##### Frame_extraction_from_single_video #####
+
+
+# Importing all necessary libraries
+import cv2
+import os
+from tqdm import tqdm
+
+
+# In[2]:
+
+
+video_path = r"C:\Users\201039530\OneDrive - Alstom\Annotations\Maintbot\roof\videos\Drone_video\20240131-020957_E300SA22430002_00211_080_1flight_LM14 31012024_Undefined_cropped.mp4"
+frame_path = r"C:\Users\201039530\OneDrive - Alstom\Annotations\Maintbot\roof\videos\Drone_video\frames_30_1"
+
+
+# In[3]:
+
+
+#sampling_rate = 1
+video_name = video_path.split('\\')[-1].split('.')[0]
+video_name
+
+
+# In[4]:
+
+
+sampling_rate = 30
+vidObj = cv2.VideoCapture(video_path)
+total_frames = int(vidObj.get(cv2.CAP_PROP_FRAME_COUNT))
+print("Total frames = ",total_frames)
+
+
+# In[5]:
+
+
+# vidObj = cv2.VideoCapture(video_path)
+# total_frames = int(vidObj.get(cv2.CAP_PROP_FRAME_COUNT))
+# print(total_frames)
+count = 0
+success = 1
+while success:
+    success, image = vidObj.read()
+    if image is not None:
+        # Sampling
+        if count % sampling_rate == 0:
+            if len(str(count)) == 1:
+                frame_name = video_name + "_0000" + str(count) + '.jpg'
+            if len(str(count)) == 2:
+                frame_name = video_name + "_000" + str(count) + '.jpg'
+            if len(str(count)) == 3:
+                frame_name = video_name + "_00" + str(count) + '.jpg'
+            if len(str(count)) == 4:
+                frame_name = video_name + "_0" + str(count) + '.jpg'
+            frame_path_save = os.path.join(frame_path,frame_name)
+            # writing the extracted images
+            cv2.imwrite(frame_path_save, image)
+        count += 1
+        #print(count)
+        print("done for", frame_name)
+#print(f'\r[{count}/{total_frames}]', end='')
+#print("done for", frame_name)
+
+##### append annotation #####
+for i in range(455,504):
+    if file[i][-3:] =="txt":
+        file_loc  = os.path.join(path, file[i])
+        f = open(file_loc, "a")
+        ann = ["2 0.500260 0.425926 0.999479 0.850000 \n"]
+        f.writelines(ann)
+        f.close()
+
+
+##### update annotations #####
+path = r""
+file = os.listdir(path)
+
+for i in range(len(file)):
+    if file[i][-3:] =="txt":
+        file_loc  = os.path.join(path, file[i])
+        f = open(file_loc, "r")
+        line = f.readlines()
+        f.close()
+        for j in range(len(line)):
+            if line[j][0:1] == "3" or line[j][0:1] == "4":
+                line[j] = "2" + line[j][1:]
+            if line[j][0:2] == "10" or line[j][0:2] == "11":
+                line[j] = "2" + line[j][2:]
+            if line[j][0:1] == "5":
+                line[j] = "3" + line[j][1:]
+            if line[j][0:1] == "6":
+                line[j] = "4" + line[j][1:]
+            if line[j][0:1] == "7":
+                line[j] = "5" + line[j][1:]
+            if line[j][0:1] == "8":
+                line[j] = "6" + line[j][1:]
+            if line[j][0:1] == "9":
+                line[j] = "7" + line[j][1:]
+            if line[j][0:2] == "12":
+                line[j] = "8" + line[j][2:]
+            if line[j][0:2] == "13":
+                line[j] = "9" + line[j][2:]
+        print("done for",file[i])
+        with open(file_loc, "w") as f:
+            f.writelines(line)
+##### video createor from images #####
+
+import cv2
+import os
+from tqdm import tqdm
+
+
+# In[10]:
+
+
+video_path = r"C:\Users\201039530\OneDrive - Alstom\steelmarker\Lateral\predicted_video\External_TrainLateral_Zoom_1\External_TrainLateral_Zoom_1.mp4"
+cv2_fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+video = cv2.VideoWriter(video_path, cv2_fourcc, 5, (3840,2160))
+
+
+# In[11]:
+
+
+frames_path = r"C:\Users\201039530\OneDrive - Alstom\steelmarker\Lateral\predicted_video\External_TrainLateral_Zoom_1"
+frames_name = os.listdir(frames_path)
+#frames_name[0][-3:]
+
+
+# In[12]:
+
+
+for i in tqdm(range(len(frames_name))):
+    if frames_name[i][-3:] == "jpg":
+        #print(frames_name[i])
+        img_path = os.path.join(frames_path,frames_name[i])
+        img = cv2.imread(img_path)
+        #img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        video.write(img)
+video.release()
+
+
+##### Test_Train_Split_modified #####
+
+import os
+import fnmatch
+import random
+import shutil
+
+train_img_path = r'C:\Users\201039530\OneDrive - Alstom\yolov8_ultralytics\dataset\images\train'
+train_labels_path = "\\".join(train_img_path.split("\\")[:-2]) + "\\labels\\train"
+val_img_path = "\\".join(train_img_path.split("\\")[:-1]) + "\\val"
+val_labels_path = "\\".join(train_img_path.split("\\")[:-2]) + "\\labels\\val"
+test_path = "\\".join(train_img_path.split("\\")[:-2]) + "\\test"
+
+image_extension = ".jpg"
+if not os.path.exists(val_img_path):
+    os.mkdir(val_img_path)
+if not os.path.exists(val_labels_path):
+    os.mkdir(val_labels_path)
+if not os.path.exists(test_path):
+    os.mkdir(test_path)
+
+# Spliting for validation
+filelist = fnmatch.filter(os.listdir(train_labels_path),"*.txt")
+val = random.sample(filelist, int(len(filelist)*0.2))
+for i in range(len(val)):
+    source_txt = os.path.join(train_labels_path,val[i])
+    dest_txt = os.path.join(val_labels_path,val[i])
+    source_img = os.path.join(train_img_path,val[i][:-4] + image_extension)
+    source_dest = os.path.join(val_img_path,val[i][:-4] + image_extension)
+    shutil.move(source_txt,dest_txt)
+    shutil.move(source_img,source_dest)
+print("vaildation split Successful")
+
+
+# Spliting for testing
+# filelist = fnmatch.filter(os.listdir(train_labels_path),"*.txt")
+# test = random.sample(filelist, int(len(filelist)*0.1))
+# for i in range(len(test)):
+    # source_txt = os.path.join(train_labels_path,test[i])
+    # dest_txt = os.path.join(test_path,test[i])
+    # source_img = os.path.join(train_img_path,test[i][:-4] + image_extension)
+    # source_dest = os.path.join(test_path,test[i][:-4] + image_extension)
+    # shutil.move(source_txt,dest_txt)
+    # shutil.move(source_img,source_dest)
+# print("testing split Successful)
+
+
+##### blockwise_split_img_labels_yolov3 #####
+
+
+import os
+import math
+import cv2
+import numpy as np
+import time
+import tqdm
+import re
+import copy
+
+
+# In[8]:
+
+
+resolution = (1408, 1408)
+
+
+# In[9]:
+
+
+images_path = r'C:\Users\201039530\OneDrive - Alstom\Annotations\Track_layout_Automation\signaling_elements\TrackLayoutImages_SignalingElements\data_for_training\images\valid'
+labels_path = r'C:\Users\201039530\OneDrive - Alstom\Annotations\Track_layout_Automation\signaling_elements\TrackLayoutImages_SignalingElements\modified_annotations\All_components\labels\valid'
+
+images_out_path = r'C:\Users\201039530\OneDrive - Alstom\Annotations\Track_layout_Automation\signaling_elements\TrackLayoutImages_SignalingElements\Blockwise_split_images_labels_1408_1\images\valid'
+labels_out_path = r'C:\Users\201039530\OneDrive - Alstom\Annotations\Track_layout_Automation\signaling_elements\TrackLayoutImages_SignalingElements\Blockwise_split_images_labels_1408_1\labels\valid'
+
+os.makedirs(images_out_path, exist_ok=True) 
+os.makedirs(labels_out_path, exist_ok=True) 
+
+
+# In[10]:
+
+
+def split_image(img, filename, resolution):
+    WIDTH, HEIGHT = resolution
+
+    # OUTPUT = os.path.join(images_out_path, filename.split('.')[0])
+    OUTPUT = images_out_path
+    os.makedirs(OUTPUT, exist_ok=True) 
+
+    (y, x, z) = img.shape
+    n_x = math.ceil(x/WIDTH)
+    n_y = math.ceil(y/HEIGHT)
+
+    for i in range(n_x):
+        for j in range(n_y):
+            newname = os.path.join(OUTPUT, filename.split('.')[0] + '_x'  + str(i+1) + '_y' + str(j+1) + '.png')
+            mask = np.zeros((WIDTH, HEIGHT, z), dtype=img.dtype)
+            mask.fill(255)
+            
+            y1, y2, x1, x2 = j*HEIGHT, (j+1)*HEIGHT, i*WIDTH, (i+1)*WIDTH
+            if i == n_x - 1:
+                x2 = x
+            if j == n_y - 1:
+                y2 = y
+            mask[0:(y2-y1), 0:(x2-x1), :] = img[y1:y2, x1:x2, :]
+
+            cv2.imwrite(newname, mask)
+
+    return OUTPUT
+
+
+# In[11]:
+
+
+def split_labels(filename, imgw, imgh, block_resolution):
+    fn,fe = os.path.splitext(filename)
+    labels_file = os.path.join(labels_path, fn+'.txt')
+
+    with open(labels_file, 'r') as lf:
+        labels = lf.readlines()
+
+    # print('labels *************************************** ', labels)        
+
+    h_blocks = (imgh/block_resolution[1] + 1) if imgh % block_resolution[1] > 0 else imgh/block_resolution[1]
+    v_blocks = (imgw/block_resolution[0] + 1) if imgw % block_resolution[0] > 0 else imgw/block_resolution[0]
+    
+    # print('Total blocks : h_blocks , v_blocks : ', h_blocks , v_blocks)
+
+    for label in labels:
+        cls, x, y, w, h = label.replace('\n', '').split()
+        # print('cls, x, y, w, h : ', cls, x, y, w, h)
+
+        x = float(x)
+        y = float(y)
+        w = float(w)
+        h = float(h)
+
+        # Convert the normalized x,y coordinates to actual pixel point
+        c_x = x*imgw
+        c_y = y*imgh
+        c_w = w*imgw
+        c_h = h*imgh
+
+        # print('c_x, c_y, c_w, c_h : ', c_x, c_y, c_w, c_h)
+
+        # Find the x1,y1 and x2,y2 of the bounding box
+        x1 = c_x - c_w/2
+        y1 = c_y - c_h/2
+        x2 = c_x + c_w/2
+        y2 = c_y + c_h/2
+
+        # print('x1, y1, x2, y2 : ', x1, y1, x2, y2)
+
+        # Find the row number and column number of the block
+        c_y_b1 = int(y1/block_resolution[1]) + 1
+        c_x_b1 = int(x1/block_resolution[0]) + 1
+
+        c_y_b2 = int(y2/block_resolution[1]) + 1
+        c_x_b2 = int(x2/block_resolution[0]) + 1
+
+        # print('c_y_b1, c_x_b1 : ', c_y_b1, c_x_b1)
+        # print('c_y_b2, c_x_b2 : ', c_y_b2, c_x_b2)
+
+
+        if c_y_b1 == c_y_b2 and c_x_b1 == c_x_b2:
+            # Calculate offset
+            y_offset = (c_y_b1 - 1) * resolution[1]
+            x_offset = (c_x_b1 - 1) * resolution[0]
+
+            # print('y_offset, x_offset : ', y_offset, x_offset)
+
+            c_x_new = c_x - x_offset
+            c_y_new = c_y - y_offset
+
+            # print('c_x_new, c_y_new : ', c_x_new, c_y_new)
+
+            x_new = c_x_new / resolution[0]
+            y_new = c_y_new / resolution[1]
+
+            label_file_name = fn + '_x' + str(c_x_b1) + '_y' + str(c_y_b1) + '.txt'
+            label_file_path = os.path.join(labels_out_path, label_file_name)
+            if os.path.isfile(label_file_path):
+                write_mode = 'a'
+            else:
+                write_mode = 'w'
+
+            with open(label_file_path, write_mode) as blf:
+                blf.write(' '.join([cls, str(x_new), str(y_new), str(c_w/resolution[0]), str(c_h/resolution[1])]))
+                blf.write('\n')
+
+        elif c_y_b1 == c_y_b2:
+            # Calculate offset
+            y_offset = (c_y_b1 - 1) * resolution[1]
+            x1_offset = (c_x_b1 - 1) * resolution[0]
+            x2_offset = (c_x_b2 - 1) * resolution[0]
+
+            # print('y_offset : ', y_offset)
+            # print('x1_offset : ', x1_offset)
+            # print('x2_offset : ', x2_offset)
+
+            # Element bbox is split into two blocks horizontally
+            # Calculate the x center for the first block
+            # y center doesnot change
+            c_x1_new = (x1 + x2_offset)/2 - x1_offset
+            c_y_new = c_y - y_offset
+
+            x1_new = c_x1_new / resolution[0]
+            y_new = c_y_new / resolution[1]
+
+            c1_w = x2_offset - x1
+
+            # print('x1_new : ', x1_new)
+            # print('y_new : ', y_new)
+            # print('c1_w : ', c1_w)
+            # print('x2_offset : ', x2_offset)
+            # print('x1 : ', x1)
+
+
+            # Calculate the x center for the second block
+            c_x2_new = (x2 + x2_offset)/2 - x2_offset
+            c_y_new = c_y - y_offset
+
+            x2_new = c_x2_new / resolution[0]
+            y_new = c_y_new / resolution[1]
+
+            c2_w = x2 - x2_offset
+
+            # print('x2_new : ', x2_new)
+            # print('c2_w : ', c2_w)
+            # print('x2 : ', x2)
+
+
+            label_file_name = fn + '_x' + str(c_x_b1) + '_y' + str(c_y_b1) + '.txt'
+            label_file_path = os.path.join(labels_out_path, label_file_name)
+            if os.path.isfile(label_file_path):
+                write_mode = 'a'
+            else:
+                write_mode = 'w'
+
+            if c1_w > 15:
+                with open(label_file_path, write_mode) as blf:
+                    blf.write(' '.join([cls, str(x1_new), str(y_new), str(c1_w/resolution[0]), str(c_h/resolution[1])]))
+                    blf.write('\n')
+
+            label_file_name = fn + '_x' + str(c_x_b2) + '_y' + str(c_y_b1) + '.txt'
+            label_file_path = os.path.join(labels_out_path, label_file_name)
+            if os.path.isfile(label_file_path):
+                write_mode = 'a'
+            else:
+                write_mode = 'w'
+
+            if c2_w > 15:
+                with open(label_file_path, write_mode) as blf:
+                    blf.write(' '.join([cls, str(x2_new), str(y_new), str(c2_w/resolution[0]), str(c_h/resolution[1])]))
+                    blf.write('\n')
+
+
+        elif c_x_b1 == c_x_b2:
+            # Calculate offset
+            y1_offset = (c_y_b1 - 1) * resolution[1]
+            y2_offset = (c_y_b2 - 1) * resolution[1]
+            x_offset = (c_x_b1 - 1) * resolution[0]
+
+            # print('x_offset : ', x_offset)
+            # print('y1_offset : ', y1_offset)
+            # print('y2_offset : ', y2_offset)
+
+            # Element bbox is split into two blocks horizontally
+            # Calculate the x center for the first block
+            # y center doesnot change
+            c_y1_new = (y1 + y2_offset)/2 - y1_offset
+            c_x_new = c_x - x_offset
+
+            y1_new = c_y1_new / resolution[1]
+            x_new = c_x_new / resolution[0]
+
+            c1_h = y2_offset - y1
+
+            # print('y1_new : ', y1_new)
+            # print('x_new : ', x_new)
+            # print('c1_h : ', c1_h)
+            # print('y2_offset : ', y2_offset)
+            # print('y1 : ', y1)
+
+
+            # Calculate the x center for the second block
+            c_y2_new = (y2 + y2_offset)/2 - y2_offset
+            c_x_new = c_x - x_offset
+
+            y2_new = c_y2_new / resolution[1]
+            x_new = c_x_new / resolution[0]
+
+            c2_h = y2 - y2_offset
+
+            # print('y2_new : ', y2_new)
+            # print('c2_ h: ', c2_h)
+            # print('y2 : ', y2)
+
+
+            label_file_name = fn + '_x' + str(c_x_b1) + '_y' + str(c_y_b1) + '.txt'
+            label_file_path = os.path.join(labels_out_path, label_file_name)
+            if os.path.isfile(label_file_path):
+                write_mode = 'a'
+            else:
+                write_mode = 'w'
+
+            if c1_h > 15:
+                with open(label_file_path, write_mode) as blf:
+                    blf.write(' '.join([cls, str(x_new), str(y1_new), str(c_w/resolution[0]), str(c1_h/resolution[1])]))
+                    blf.write('\n')
+
+            label_file_name = fn + '_x' + str(c_x_b1) + '_y' + str(c_y_b2) + '.txt'
+            label_file_path = os.path.join(labels_out_path, label_file_name)
+            if os.path.isfile(label_file_path):
+                write_mode = 'a'
+            else:
+                write_mode = 'w'
+
+            if c2_h > 15:
+                with open(label_file_path, write_mode) as blf:
+                    blf.write(' '.join([cls, str(x_new), str(y2_new), str(c_w/resolution[0]), str(c2_h/resolution[1])]))
+                    blf.write('\n')
+            
+        else:
+            print("One element ignored cls, x, y, w, h : ", cls, x, y, w, h, filename)
+
+
+# In[12]:
+
+
+files = os.listdir(images_path)
+for file in files:
+    img = cv2.imread(os.path.join(images_path, file))
+    new_outpath = split_image(img, file, resolution)
+
+    imgh, imgw, _ = img.shape
+    split_labels(file, imgw, imgh, resolution)
+
+
+# In[73]:
+
+
+imgw = 3570
+imgh = 2523
+split_labels('3_1.png', imgw, imgh, resolution)
+
+
+
+
+#####

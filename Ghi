@@ -1,1 +1,637 @@
-g
+##### Yolov5_SORT_Tracker Parsing - Counting Unique Objects - Coachwise ######
+
+# coding: utf-8
+
+# In[1]:
+
+
+import pandas as pd
+
+
+# In[2]:
+
+
+FRAME_THRESHOLD = 30 # 50 for roof
+
+
+# In[3]:
+
+
+# Bolt
+# ====
+# Ground Truth - 669
+# IoU - 759
+
+# Missing Bolt
+# ============
+# Ground Truth - 38
+# IoU - 52
+
+
+# In[4]:
+
+
+def getCoachNumber(frame_number, gangway_frame_numbers):
+    coach_number = 1
+    for i in range(len(gangway_frame_numbers)):
+        if frame_number > gangway_frame_numbers[i]:
+            coach_number += 1
+            
+    return coach_number
+
+
+# ### Gangway
+
+# In[5]:
+
+
+df_gangway = pd.read_csv(r"C:\Users\201039530\OneDrive - Alstom\yolov5-object-tracking\runs\detect\roof_bolt_missing_bolt_with_gangway_tracking\underbody_external\External_Underbody\gangway\tracking.csv")
+df_gangway['class'] = 'gangway'
+
+df_gangway.head()
+
+df_framecount = df_gangway['unique_id'].value_counts()
+
+df_framecount = df_framecount.reset_index().rename(columns={'unique_id':'frame_count','index':'unique_id'})
+# df_framecount
+
+# df_framecount[df_framecount['frame_count'] > FRAME_THRESHOLD]
+
+df_gangwayCount_moreThanThreshold = df_framecount[df_framecount['frame_count'] > FRAME_THRESHOLD]
+
+gangway_count = df_gangwayCount_moreThanThreshold.shape[0]
+
+print(f'Number of unique gangways passing frame threshold = {gangway_count}')
+
+
+# In[ ]:
+
+
+df_gangwayCount_moreThanThreshold = df_gangwayCount_moreThanThreshold.sort_values(by=['unique_id'])
+
+
+# In[ ]:
+
+
+df_gangwayCount_moreThanThreshold
+
+
+# In[ ]:
+
+
+valid_gangway_uids = list(df_gangwayCount_moreThanThreshold['unique_id'])
+valid_gangway_uids
+
+
+# In[190]:
+
+
+dataframes = []
+for valid_gangway_uid in valid_gangway_uids:
+    dataframes.append([valid_gangway_uid, df_gangway[df_gangway['unique_id'] == valid_gangway_uid]['frame_no']])
+
+
+# In[191]:
+
+
+first_gangway_frame = list(dataframes[0][1])[0]
+
+
+# In[192]:
+
+
+second_gangway_frame = list(dataframes[1][1])[0]
+
+
+# In[193]:
+
+
+third_gangway_frame = list(dataframes[2][1])[0]
+
+
+# In[194]:
+
+
+forth_gangway_frame = list(dataframes[3][1])[0]
+
+
+# In[195]:
+
+
+first_gangway_frame, second_gangway_frame, third_gangway_frame, forth_gangway_frame
+
+
+# In[196]:
+
+
+gangway_frame_numbers = [first_gangway_frame, second_gangway_frame, third_gangway_frame,forth_gangway_frame]
+
+
+# In[197]:
+
+
+gangway_frame_numbers
+
+
+# ### Bolt
+
+# In[198]:
+
+
+df_bolt = pd.read_csv(r"C:\Users\201039530\OneDrive - Alstom\yolov5-object-tracking\runs\detect\roof_bolt_missing_bolt_with_gangway_tracking\underbody_external\External_Underbody\bolt\tracking.csv")
+df_bolt['class'] = 'bolt'
+
+df_bolt.head()
+
+df_framecount = df_bolt['unique_id'].value_counts()
+
+df_framecount = df_framecount.reset_index().rename(columns={'unique_id':'frame_count','index':'unique_id'})
+
+# df_framecount
+
+# df_framecount[df_framecount['frame_count'] > FRAME_THRESHOLD]
+
+df_boltCount_moreThanThreshold = df_framecount[df_framecount['frame_count'] > FRAME_THRESHOLD]
+
+bolt_count = df_boltCount_moreThanThreshold.shape[0]
+
+print(f'Number of unique bolts passing frame threshold = {bolt_count}')
+
+
+# In[199]:
+
+
+#df_bolt.head()
+
+
+# In[200]:
+
+
+df_boltCount_moreThanThreshold = df_boltCount_moreThanThreshold.sort_values(by=['unique_id'])
+
+# df_boltCount_moreThanThreshold
+
+unique_bolt_ids = list(df_boltCount_moreThanThreshold['unique_id'])
+
+first_frame_of_occurence_for_each_bolt = []
+for unique_bolt_id in unique_bolt_ids:
+    first_frame_of_occurence = list(df_bolt[df_bolt['unique_id'] == unique_bolt_id]['frame_no'])[0]
+    first_frame_of_occurence_for_each_bolt.append(first_frame_of_occurence)
+
+df_boltCount_moreThanThreshold['first_frame'] = first_frame_of_occurence_for_each_bolt
+
+# df_boltCount_moreThanThreshold
+
+df_boltCount_moreThanThreshold['coach_no'] = df_boltCount_moreThanThreshold.apply(lambda row: getCoachNumber(row['first_frame'], gangway_frame_numbers), axis=1)
+
+# df_boltCount_moreThanThreshold
+
+
+# In[201]:
+
+
+#df_boltCount_moreThanThreshold
+
+
+# ### Missing Bolt
+
+# In[202]:
+
+
+df_missing_bolt = pd.read_csv(r"C:\Users\201039530\OneDrive - Alstom\yolov5-object-tracking\runs\detect\roof_bolt_missing_bolt_with_gangway_tracking\underbody_external\External_Underbody\missing_bolt\tracking.csv")
+df_missing_bolt['class'] = 'missing_bolt'
+
+df_missing_bolt.head()
+
+df_framecount = df_missing_bolt['unique_id'].value_counts()
+
+df_framecount = df_framecount.reset_index().rename(columns={'unique_id':'frame_count','index':'unique_id'})
+
+# df_framecount
+
+# df_framecount[df_framecount['frame_count'] > FRAME_THRESHOLD]
+
+df_missing_boltCount_moreThanThreshold = df_framecount[df_framecount['frame_count'] > FRAME_THRESHOLD]
+
+missing_bolt_count = df_missing_boltCount_moreThanThreshold.shape[0]
+
+print(f'Number of unique missing_bolts passing frame threshold = {missing_bolt_count}')
+
+
+# In[203]:
+
+
+#df_missing_bolt.head()
+
+
+# In[204]:
+
+
+df_missing_boltCount_moreThanThreshold = df_missing_boltCount_moreThanThreshold.sort_values(by=['unique_id'])
+
+# df_missing_boltCount_moreThanThreshold
+
+unique_missing_bolt_ids = list(df_missing_boltCount_moreThanThreshold['unique_id'])
+
+first_frame_of_occurence_for_each_missing_bolt = []
+for unique_missing_bolt_id in unique_missing_bolt_ids:
+    first_frame_of_occurence = list(df_missing_bolt[df_missing_bolt['unique_id'] == unique_missing_bolt_id]['frame_no'])[0]
+    first_frame_of_occurence_for_each_missing_bolt.append(first_frame_of_occurence)
+
+df_missing_boltCount_moreThanThreshold['first_frame'] = first_frame_of_occurence_for_each_missing_bolt
+
+# df_missing_boltCount_moreThanThreshold
+
+df_missing_boltCount_moreThanThreshold['coach_no'] = df_missing_boltCount_moreThanThreshold.apply(lambda row: getCoachNumber(row['first_frame'], gangway_frame_numbers), axis=1)
+
+# df_missing_boltCount_moreThanThreshold
+
+
+# In[205]:
+
+
+#df_missing_boltCount_moreThanThreshold
+
+
+# ### Coachwise Missing Bolt Data
+
+# In[206]:
+
+
+number_of_coaches = len(gangway_frame_numbers) + 1
+
+
+# In[207]:
+
+
+number_of_coaches
+
+
+# In[208]:
+
+
+df_missing_bolt_coachwise = df_missing_boltCount_moreThanThreshold['coach_no'].value_counts().reset_index()
+
+
+# In[209]:
+
+
+#df_missing_bolt_coachwise
+
+
+# In[210]:
+
+
+df_missing_bolt_coachwise = df_missing_bolt_coachwise.rename(columns={'coach_no':'count_missing_bolt'})
+df_missing_bolt_coachwise = df_missing_bolt_coachwise.rename(columns={'index':'coach_no'})
+df_missing_bolt_coachwise = df_missing_bolt_coachwise.sort_values(by=['coach_no'])
+
+
+# In[211]:
+
+
+df_missing_bolt_coachwise
+
+
+# In[212]:
+
+
+### Coachwise Bolt Data
+
+
+# In[220]:
+
+
+df_bolt_coachwise = df_boltCount_moreThanThreshold['coach_no'].value_counts().reset_index()
+
+
+# In[221]:
+
+
+df_bolt_coachwise = df_bolt_coachwise.rename(columns={'coach_no':'count_bolt'})
+df_bolt_coachwise = df_bolt_coachwise.rename(columns={'index':'coach_no'})
+df_bolt_coachwise = df_bolt_coachwise.sort_values(by=['coach_no'])
+df_bolt_coachwise
+
+
+# In[223]:
+
+
+final_df = df_bolt_coachwise.join(df_missing_bolt_coachwise["count_missing_bolt"])
+final_df.reset_index(inplace = True)
+final_df = final_df.drop("index", axis=1)
+final_df = final_df.fillna(0)
+final_df
+
+
+# In[216]:
+
+
+Total_bolt = final_df['count_bolt'].sum()
+print("total Bolt", Total_bolt)
+Total_missing_bolt = final_df['count_missing_bolt'].sum()
+print("total Missing_Bolt", Total_missing_bolt)
+
+
+# In[225]:
+
+
+final_df.to_csv(r"C:\Users\201039530\OneDrive - Alstom\tracker\yolov_5_tracker\underbody_external\underbody_external_underbody.csv")
+
+
+##### Tracker_Parsing_Coachwise_with_JSON_creation #####
+
+
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[25]:
+
+
+import pandas as pd
+import os
+import tqdm
+import json
+
+
+# In[26]:
+
+
+FRAME_THRESHOLD = 20 #roof-62, underbody-20, lateral-22
+
+
+# In[27]:
+
+
+#paths
+classwise_yolo_tracker_folder_path = r"C:\Users\201039530\OneDrive - Alstom\yolov5-object-tracking\runs\detect\lateral_tracking_components_yolox"
+df_gangway = pd.read_csv(os.path.join(classwise_yolo_tracker_folder_path,r"gangway\exp\tracking.csv"))
+classnames = os.listdir(classwise_yolo_tracker_folder_path)
+csv_name = "External_TrainLateral_OpenAxleCover_yolox_FRAME_THRESHOLD-" + str(FRAME_THRESHOLD) + ".csv"
+json_name = "External_TrainLateral_OpenAxleCover_yolox_FRAME_THRESHOLD-" + str(FRAME_THRESHOLD) + ".json"
+csv_saving_path = os.path.join("\\".join(classwise_yolo_tracker_folder_path.split("\\")[:-1]),csv_name)
+json_saving_path = os.path.join("\\".join(classwise_yolo_tracker_folder_path.split("\\")[:-1]),json_name)
+
+#classnames
+
+
+# In[28]:
+
+
+def getCoachNumber(frame_number, gangway_frame_numbers):
+    coach_number = 1
+    for i in range(len(gangway_frame_numbers)):
+        if frame_number > gangway_frame_numbers[i]:
+            coach_number += 1
+            
+    return coach_number
+
+
+# ### Gangway
+
+# In[29]:
+
+
+df_gangway['class'] = 'gangway'
+
+df_gangway.head()
+
+df_framecount = df_gangway['unique_id'].value_counts()
+
+df_framecount = df_framecount.reset_index().rename(columns={'unique_id':'frame_count','index':'unique_id'})
+
+# df_framecount
+
+# df_framecount[df_framecount['frame_count'] > FRAME_THRESHOLD]
+
+df_gangwayCount_moreThanThreshold = df_framecount[df_framecount['frame_count'] > FRAME_THRESHOLD]
+
+gangway_count = df_gangwayCount_moreThanThreshold.shape[0]
+
+print(f'Number of unique gangways passing frame threshold = {gangway_count}')
+
+
+# In[30]:
+
+
+df_gangwayCount_moreThanThreshold = df_gangwayCount_moreThanThreshold.sort_values(by=['unique_id'])
+
+
+# In[31]:
+
+
+df_gangwayCount_moreThanThreshold
+
+
+# In[32]:
+
+
+valid_gangway_uids = list(df_gangwayCount_moreThanThreshold['unique_id'])
+
+
+# In[33]:
+
+
+dataframes = []
+for valid_gangway_uid in valid_gangway_uids:
+    dataframes.append([valid_gangway_uid, df_gangway[df_gangway['unique_id'] == valid_gangway_uid]['frame_no']])
+
+
+# In[34]:
+
+
+len(dataframes)
+
+
+# In[35]:
+
+
+gangway_frame_numbers = []
+for i in range(len(dataframes)):
+    gangway_frame_numbers.append(list(dataframes[i][1])[0])
+
+
+# In[36]:
+
+
+gangway_frame_numbers
+
+
+# ### Object Helper Functions
+
+# In[37]:
+
+
+def getTracker(tracker_csv_path, object_class_name, gangway_frame_numbers, logbook):
+    # './trackers/tracking_object.csv'
+    # tracker_csv_path, object_class_name
+
+    df_object = pd.read_csv(tracker_csv_path)
+    df_object['class'] = object_class_name
+
+    df_object.head()
+
+    df_framecount = df_object['unique_id'].value_counts()
+
+    df_framecount = df_framecount.reset_index().rename(columns={'unique_id':'frame_count','index':'unique_id'})
+
+    # df_framecount
+
+    # df_framecount[df_framecount['frame_count'] > FRAME_THRESHOLD]
+
+    df_objectCount_moreThanThreshold = df_framecount[df_framecount['frame_count'] > FRAME_THRESHOLD]
+
+    object_count = df_objectCount_moreThanThreshold.shape[0]
+
+    log_string = f'Number of unique {object_class_name} passing frame threshold = {object_count}'
+    logbook.append(log_string)
+
+    df_objectCount_moreThanThreshold = df_objectCount_moreThanThreshold.sort_values(by=['unique_id'])
+
+    # df_objectCount_moreThanThreshold
+
+    unique_object_ids = list(df_objectCount_moreThanThreshold['unique_id'])
+
+    first_frame_of_occurence_for_each_object = []
+    for unique_object_id in unique_object_ids:
+        first_frame_of_occurence = list(df_object[df_object['unique_id'] == unique_object_id]['frame_no'])[0]
+        first_frame_of_occurence_for_each_object.append(first_frame_of_occurence)
+
+    df_objectCount_moreThanThreshold['first_frame'] = first_frame_of_occurence_for_each_object
+
+    # df_objectCount_moreThanThreshold
+
+    df_objectCount_moreThanThreshold['coach_no'] = df_objectCount_moreThanThreshold.apply(lambda row: getCoachNumber(row['first_frame'], gangway_frame_numbers), axis=1)
+
+    # df_objectCount_moreThanThreshold
+
+    return df_objectCount_moreThanThreshold
+
+
+# In[38]:
+
+
+def getCoachwiseTracker(tracker_df, gangway_frame_numbers):    
+    number_of_coaches = len(gangway_frame_numbers) + 1
+
+    # number_of_coaches
+
+    df_object_coachwise = tracker_df['coach_no'].value_counts().reset_index()
+
+    df_object_coachwise
+
+    df_object_coachwise = df_object_coachwise.rename(columns={'coach_no':'count'})
+    df_object_coachwise = df_object_coachwise.rename(columns={'index':'coach_no'})
+    df_object_coachwise = df_object_coachwise.sort_values(by=['coach_no'])
+
+    return df_object_coachwise
+
+
+# In[39]:
+
+
+def getCoachwiseTrackerDataFrame(tracker_csv_path, object_class_name, gangway_frame_numbers, logbook):
+    df_objectCount_moreThanThreshold = getTracker(tracker_csv_path, object_class_name, gangway_frame_numbers, logbook)
+    df_object_coachwise = getCoachwiseTracker(df_objectCount_moreThanThreshold, gangway_frame_numbers)
+    return df_object_coachwise
+
+
+# ### Classwise Object Tracking
+
+# In[40]:
+
+
+#classnames
+
+
+# In[41]:
+
+
+logbook = []
+classes = list(range(1,len(gangway_frame_numbers)+2)) #get list of number of coaches starting at 1
+master_tracker = pd.DataFrame(classes, columns=['coach_no'])
+for classname in tqdm.tqdm(classnames):
+    df_coachwise_tracker = getCoachwiseTrackerDataFrame(f'{classwise_yolo_tracker_folder_path}/{classname}/exp/tracking.csv', classname, gangway_frame_numbers, logbook)
+    df_coachwise_tracker = df_coachwise_tracker.rename(columns={'count':f'count_{classname}'})
+    #print(df_coachwise_tracker)
+    master_tracker = pd.merge(master_tracker,df_coachwise_tracker, on= "coach_no", how="outer")
+
+
+# In[42]:
+
+
+#master_tracker = master_tracker.drop("index", axis=1)
+df_master_tracker = master_tracker
+df_master_tracker = df_master_tracker.fillna(0)
+df_master_tracker = df_master_tracker.astype(int)
+df_master_tracker
+
+
+# In[43]:
+
+
+df_master_tracker.to_csv(csv_saving_path)
+
+
+# In[44]:
+
+
+for log in logbook:
+    print(log)
+
+
+# In[45]:
+
+
+df_master_tracker = df_master_tracker.drop(columns = ['coach_no'])
+classes_list = list(df_master_tracker.columns)
+#classes_list[0]
+
+
+# In[46]:
+
+
+classes_list[0].split("_")[1]
+
+
+# In[47]:
+
+
+coachwise_dict = {}
+for i in range(df_master_tracker.shape[0]):
+    coachwise_dict[i+1] = [{}]
+    for j in range(len(classes_list)):
+        coachwise_dict[i+1][0][classes_list[j].split("_")[1]] = int(df_master_tracker[f'{classes_list[j]}'].iloc[i])
+
+
+# In[48]:
+
+
+lateral_dict = {"underbody":coachwise_dict}
+matrics_dict = {"matrics":lateral_dict}
+
+
+# In[49]:
+
+
+# with open(json_saving_path, "w") as outfile:
+#     json.dump(matrics_dict, outfile)
+
+
+# In[50]:
+
+
+# json_object = json.dumps(matrics_dict, indent = 4) 
+# print(json_object)
+
+
+# In[ ]:
+
+
+
+
+
+
+
+
+

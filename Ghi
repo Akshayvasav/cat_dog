@@ -632,6 +632,37 @@ matrics_dict = {"matrics":lateral_dict}
 
 
 
+#### cuda installation on RHEl #####
 
+Verify OS version for server
+$ cat /etc/os-release
+2. Check current GPU status
+$ nvidia-smi
+3. Download CUDA (recommend 10.2) runfile from link:
+CUDA Toolkit Archive | NVIDIA Developer
+[ https://developer.nvidia.com/cuda-toolkit-archive ]
+4. Install CUDA in /mnt/ext_drive
+$ sudo chmod 777 cuda_<cuda-version>_<driver-version>_linux.run
+$ sudo sh cuda_<cuda-version>_<driver-version>_linux.run --toolkit
+--toolkitpath=/mnt/ext_drive/cuda_workspace/toolkit
+--tmpdir=/mnt/ext_drive/cuda_workspace/tmp
+--defaultroot=/mnt/ext_drive/cuda_workspace/
+(Above 4 lines are 1 command)
+5. Download cuDNN (recommend 7.6.5) tarfile from link:
+cuDNN Archive | NVIDIA Developer
+[ https://developer.nvidia.com/rdp/cudnn-archive ]
+6. Extract/Setup/Install cuDNN
+$ sudo chmod 777 cudnn-<cuda-version>-linux-x64-v<cudnn-version>.tgz
+$ sudo tar -zxvf cudnn-<cuda-version>-linux-x64-v<cudnn-version>.tgz
+$ cd cuda
+$ sudo cp -P lib64/* /usr/local/cuda/lib64/
+$ sudo cp -P include/* /usr/local/cuda/include/
+7. Prepare PATH exports in ~/.bashrc
+export PATH="/mnt/ext_drive/cuda_workspace/toolkit/bin${PATH:+:${PATH}}"
+export LD_LIBRARY_PATH="/mnt/ext_drive/cuda_workspace/toolkit/targets/x86_64-linux/lib"
+export TMPDIR="/mnt/ext_drive/user/a_201023204/temp"
+export CPATH="/mnt/ext_drive/cuda_workspace/toolkit/targets/x86_64-linux/include:$CPATH"
+8. Source ~/.bashrc
+$ source ~/.bashrc
 
 
